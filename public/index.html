@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Benchmarking UI</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        textarea { width: 100%; height: 100px; margin-bottom: 10px; }
+        button { padding: 10px 20px; margin-top: 10px; }
+        .results, .history { margin-top: 20px; }
+        .history-item { cursor: pointer; color: blue; text-decoration: underline; }
+        .status { position: fixed; top: 10px; right: 10px; padding: 5px 10px; border-radius: 5px; }
+        .connected { background-color: green; color: white; }
+        .disconnected { background-color: red; color: white; }
+    </style>
+</head>
+<body>
+    <h1>JavaScript Benchmarking Tool</h1>
+
+    <div id="wsStatus" class="status disconnected">Disconnected</div>
+
+    <label>Setup Code:</label>
+    <textarea id="setup"></textarea>
+
+    <label>Test Case A:</label>
+    <textarea id="optionA"></textarea>
+
+    <label>Test Case B:</label>
+    <textarea id="optionB"></textarea>
+
+    <label>Teardown Code:</label>
+    <textarea id="teardown"></textarea>
+
+    <button id="startBenchmark">Start Benchmark</button>
+    <button id="saveBenchmark">Save Benchmark</button>
+    <button id="clearHistory">Clear History</button>
+
+    <div class="results" id="results"></div>
+
+    <h2>Previous Benchmarks</h2>
+    <div class="history" id="history"></div>
+
+    <script>
+        const wsStatus = document.getElementById('wsStatus');
+        const ws = new WebSocket('ws://localhost:8081');
+
+        ws.onopen = () => {
+            console.log('Connected to WebSocket server');
+            wsStatus.textContent = 'Connected';
+            wsStatus.classList.remove('disconnected');
+            wsStatus.classList.add('connected');
+            loadHistory();
+        };
+
+        ws.onclose = () => {
+            console.log('Disconnected from WebSocket server');
+            wsStatus.textContent = 'Disconnected';
+            wsStatus.classList.remove('connected');
+            wsStatus.classList.add('disconnected');
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.status === 'benchmark_started') {
+                document.getElementById('results').innerHTML = `
+                    <p>Benchmark Started:</p>
+                    <p><a href="${data.url}" target="_blank">Run Benchmark</a></p>
+                `;
+            } else if (data.status === 'benchmark_results') {
+                document.getElementById('results').innerHTML = `
+                    <p>Results:</p>
+                    <pre>${JSON.stringify(data.results, null, 2)}</pre>
+                `;
+            }
+        };
+
+        document.getElementById('startBenchmark').onclick = () => {
+            const setup = document.getElementById('setup').value;
+            const optionA = document.getElementById('optionA').value;
+            const optionB = document.getElementById('optionB').value;
+            const teardown = document.getElementById('teardown').value;
+
+            ws.send(JSON.stringify({
+                type: 'start_benchmark',
+                payload: { setup, optionA, optionB, teardown }
+            }));
+        };
+
+        document.getElementById('saveBenchmark').onclick = () => {
+            const name = prompt('Enter a name for this benchmark:');
+            if (!name) return;
+
+            const setup = document.getElementById('setup').value;
+            const optionA = document.getElementById('optionA').value;
+            const optionB = document.getElementById('optionB').value;
+            const teardown = document.getElementById('teardown').value;
+            const history = JSON.parse(localStorage.getItem('benchmarkHistory') || '[]');
+
+            history.push({ name, setup, optionA, optionB, teardown, timestamp: new Date().toISOString() });
+            localStorage.setItem('benchmarkHistory', JSON.stringify(history));
+
+            loadHistory();
+        };
+
+        document.getElementById('clearHistory').onclick = () => {
+            if (confirm('Are you sure you want to clear all saved benchmarks?')) {
+                localStorage.removeItem('benchmarkHistory');
+                loadHistory();
+            }
+        };
+
+        function loadHistory() {
+            const historyContainer = document.getElementById('history');
+            historyContainer.innerHTML = '';
+            const history = JSON.parse(localStorage.getItem('benchmarkHistory') || '[]');
+
+            history.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.classList.add('history-item');
+                div.textContent = `${item.name || 'Unnamed'} - ${new Date(item.timestamp).toLocaleString()}`;
+                div.onclick = () => loadBenchmark(item);
+                historyContainer.appendChild(div);
+            });
+        }
+
+        function loadBenchmark(item) {
+            document.getElementById('setup').value = item.setup;
+            document.getElementById('optionA').value = item.optionA;
+            document.getElementById('optionB').value = item.optionB;
+            document.getElementById('teardown').value = item.teardown;
+        }
+    </script>
+</body>
+</html>
